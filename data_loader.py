@@ -51,8 +51,16 @@ def load_full_data(
     numeric_cols: Optional[List[str]] = None,
     dayfirst: bool = True,
 ) -> pd.DataFrame:
-    
-    df = pd.read_csv(fp, parse_dates=[date_col], dayfirst=dayfirst)
+    df = pd.read_csv(fp)
+
+    # Автоопределение колонки с датой, если 'Дата' отсутствует
+    if date_col not in df.columns:
+        if "Unnamed: 0" in df.columns:
+            date_col = "Unnamed: 0"
+        else:
+            raise ValueError(f"Колонка даты '{date_col}' не найдена в CSV")
+
+    df[date_col] = pd.to_datetime(df[date_col], dayfirst=dayfirst)
 
     if numeric_cols is None:
         numeric_cols = df.columns.drop(date_col).tolist()
@@ -63,11 +71,12 @@ def load_full_data(
     df = (
         df.sort_values(date_col)
         .set_index(date_col)
-        .asfreq("B")  # business‑day grid to align series
+        .asfreq("B")  # бизнес-сетка
         .ffill()
         .dropna()
     )
     return df
+
 
 # Quick CLI test
 
