@@ -206,3 +206,42 @@ def simulate_portfolio_correlated(df: pd.DataFrame,
     # пересчёт в стоимость портфеля
     weighted = np.einsum('pna,a->pn', price_paths, np.array([base_volumes[a] for a in assets]))
     return weighted  # shape [n_paths, n_steps+1]
+
+
+import numpy as np
+import pandas as pd
+
+def simulate_from_pca(factors_df: pd.DataFrame, loadings: pd.DataFrame, n_sim: int = 1000, horizon: int = 10, seed: int = 42):
+    """
+    Генерация симуляций исходных активов на основе PCA-факторов.
+
+    :param factors_df: DataFrame с временным рядом главных компонент (PC1, PC2, ...)
+    :param loadings: DataFrame с загрузками факторов (строки — активы, столбцы — PC1, PC2, ...)
+    :param n_sim: число симуляций
+    :param horizon: горизонт (количество шагов вперёд)
+    :param seed: random seed
+    :return: список DataFrame — симуляции исходных активов
+    """
+    np.random.seed(seed)
+
+    factors = factors_df.columns
+    mu = factors_df.mean().values
+    sigma = factors_df.cov().values
+
+    # Генерация симулированных PCA-факторов
+    sims = np.random.multivariate_normal(mu, sigma, size=(n_sim, horizon))  # shape [n_sim, horizon, n_factors]
+    sims = sims.transpose(0, 2, 1)  # shape [n_sim, n_factors, horizon]
+
+    # Восстановим исходные активы через загрузки (активы x факторы)
+    asset_names = loadings.index
+    loadings_matrix = loadings.values  # shape [n_assets, n_factors]
+
+    asset_sims = np.einsum("nfh,af->nah", sims, loadings_matrix)  # shape [n_sim, n_assets, horizon]
+
+    # Создадим список DataFrame
+    simulations = []
+    for sim in asset_sims:
+        df_sim = pd.DataFrame(sim.T, columns=asset_names)
+        simulations.append(df_sim)
+
+    return simulations

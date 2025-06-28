@@ -1,6 +1,8 @@
 from models import get_table_trajectories, simulate_portfolio_correlated
 import numpy as np
 import pandas as pd
+from typing import Dict, List, Optional
+
 
 def calc_var(df: pd.DataFrame,
              cir_assets: list[str],
@@ -105,3 +107,62 @@ def backtest_var_correlated(df: pd.DataFrame,
             continue
 
     return breaks
+
+
+from backtesting_analysis import compute_simulated_losses, backtest_es, plot_var_es_distribution
+def run_var_es_evaluation(
+    df: pd.DataFrame,
+    base_volumes: Dict[str, float],
+    target_date: str,
+    model_simulations: list[pd.DataFrame],
+    alpha: float = 0.01,
+    horizon_days: int = 10,
+    plot: bool = True
+):
+    """
+    Оценивает VaR и Expected Shortfall по симуляциям на заданную дату.
+
+    Аргументы:
+    - df: исходные данные
+    - base_volumes: словарь {тикер: сумма в рублях}
+    - target_date: дата оценки, строка 'YYYY-MM-DD'
+    - model_simulations: список симулированных DataFrame
+    - alpha: уровень значимости
+    - horizon_days: горизонт в днях
+    - plot: показывать ли график
+
+    Возвращает:
+    - словарь с VaR, ES, пробоями и пр.
+    """
+
+    target_date = pd.Timestamp(target_date)
+    if target_date not in df.index:
+        target_date = df.index[df.index.get_indexer([target_date], method='pad')[0]]
+
+    weights = pd.Series(base_volumes)
+    portfolio_value_0 = (df.loc[target_date, weights.index] * weights).sum()
+
+    # Симулированные потери
+    losses = compute_simulated_losses(model_simulations, base_volumes, portfolio_value_0)
+
+    # Фактическая потеря на горизонте
+    future_date = df.index[df.index.get_loc(target_date) + horizon_days]
+    portfolio_value_future = (df.loc[future_date, weights.index] * weights).sum()
+    fact_loss = portfolio_value_0 - portfolio_value_future
+
+    if plot:
+        plot_var_es_distribution(losses, alpha=alpha)
+
+    results = backtest_es(
+        actual_losses=[fact_loss],
+        simulated_losses=losses,
+        alpha=alpha
+    )
+    return {
+        "target_date": target_date,
+        "VaR": results['VaR'],
+        "ES_model": results['ES_model'],
+        "ES_empirical": results['ES_empirical'],
+        "fact_loss": fact_loss,
+        "n_exceedances": results['n_exceedances']
+    }
